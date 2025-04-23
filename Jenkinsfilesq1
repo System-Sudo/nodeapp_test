@@ -38,18 +38,7 @@ pipeline {
       }
     }
 
-    stage('Deploy to K8s') {
-      steps{
-        script {
-          sh "sed -i 's,TEST_IMAGE_NAME,systemtesting48/nodeapp:$BUILD_NUMBER,' deploymentservice.yml"
-          sh "cat deploymentservice.yml"
-          sh "kubectl --kubeconfig=/home/ec2-user/config get pods"
-          sh "kubectl --kubeconfig=/home/ec2-user/config apply -f deploymentservice.yml"
-        }
-      }
-    }
-    
-    
+
     stage('Remove Unused docker image') {
       steps{
         sh "docker rmi $dockerimagename:$BUILD_NUMBER"
