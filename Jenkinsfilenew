@@ -1,0 +1,86 @@
+pipeline {
+  environment {
+    dockerimagename = "systemtesting48/nodeapp"
+    dockerImage = ""
+    KUBECONFIG = '/home/ec2-user/config'  // Make sure this is the correct path to your kubeconfig
+    PATH = "/usr/local/bin:$PATH"  // Ensure kubectl is in the PATH
+  }
+
+  agent any
+
+  stages {
+
+    stage('Cloning Git') {
+      steps {
+        git([url: 'https://github.com/System-Sudo/nodeapp_test.git', branch: 'main', credentialsId: 'github'])
+      }
+    }
+
+    stage('Install kubectl') {
+      steps {
+        script {
+          sh '''
+            if ! command -v kubectl &> /dev/null
+            then
+              echo "kubectl not found, installing..."
+              curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+              chmod +x kubectl
+              sudo mv kubectl /usr/local/bin/
+            else
+              echo "kubectl is already installed"
+            fi
+          '''
+        }
+      }
+    }
+
+    stage('Test kubectl') {
+      steps {
+        script {
+          sh 'kubectl --kubeconfig=$KUBECONFIG version'  // Check if kubectl can access the cluster
+        }
+      }
+    }
+
+    stage('Build image') {
+      steps {
+        script {
+          dockerImage = docker.build(dockerimagename)
+        }
+      }
+    }
+
+    stage('Pushing Image') {
+      environment {
+        registryCredential = 'Dockerhub'
+      }
+      steps {
+        script {
+          docker.withRegistry('https://registry.hub.docker.com', registryCredential) {
+            dockerImage.push("$BUILD_NUMBER")
+            dockerImage.push('latest')
+          }
+        }
+      }
+    }
+
+    stage('Deploy to K8s') {
+      steps {
+        script {
+          sh "sed -i 's,TEST_IMAGE_NAME,systemtesting48/nodeapp:$BUILD_NUMBER,' deploymentservice.yml"
+          sh "cat deploymentservice.yml"
+          sh "kubectl --kubeconfig=$KUBECONFIG get pods"
+          sh "kubectl --kubeconfig=$KUBECONFIG apply -f deploymentservice.yml"
+        }
+      }
+    }
+
+    stage('Remove Unused Docker Image') {
+      steps {
+        sh "docker rmi $dockerimagename:$BUILD_NUMBER"
+        sh "docker rmi $dockerimagename:latest"
+      }
+    }
+
+  }
+}
